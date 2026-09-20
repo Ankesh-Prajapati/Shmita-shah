@@ -12,10 +12,25 @@ function ph(n){const hu=[32,28,36,24,40,20][n%6],x=20+(n*37)%60,y=25+(n*23)%50;
  return "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 1000' preserveAspectRatio='xMidYMid slice'><defs><radialGradient id='a' cx='${x}%' cy='${y}%' r='70%'><stop offset='0' stop-color='hsl(${hu},45%,34%)'/><stop offset='.6' stop-color='hsl(${hu},25%,12%)'/><stop offset='1' stop-color='#050505'/></radialGradient></defs><rect width='100%' height='100%' fill='url(#a)'/></svg>`)}
 const img=d=>{const i=new Image();i.alt=d.alt||"";i.decoding="async";i.src=d.src||ph(seed++);i.onerror=()=>{i.onerror=null;i.src=ph(seed++)};if(d.pos)i.style.objectPosition=d.pos;return i};
 
+/* soft backdrop: the photo is averaged down to a few pixels once, then the GPU scales it up smoothly.
+   Replaces a full-screen CSS blur() on 16 large images, which was the heaviest thing on the page. */
+function backdrop(el,d){
+ const cv=document.createElement("canvas");cv.width=64;cv.height=48;cv.setAttribute("aria-hidden","true");el.appendChild(cv);
+ const dark=el.classList.contains("dim")?.8:el.classList.contains("soft")?.36:.64,tw=el.classList.contains("soft")?36:el.classList.contains("dim")?16:20;
+ const im=new Image();im.decoding="async";
+ im.onload=()=>{try{
+  const t=document.createElement("canvas");t.width=tw;t.height=Math.round(tw*.75);const tc=t.getContext("2d");tc.imageSmoothingQuality="high";
+  if("filter" in tc)tc.filter="saturate(1.3)";
+  const r=Math.max(t.width/im.naturalWidth,t.height/im.naturalHeight),w=im.naturalWidth*r,h=im.naturalHeight*r;
+  tc.drawImage(im,(t.width-w)/2,(t.height-h)/2,w,h);
+  const c=cv.getContext("2d");c.imageSmoothingEnabled=true;c.imageSmoothingQuality="high";c.drawImage(t,0,0,cv.width,cv.height);
+  c.fillStyle=`rgba(0,0,0,${dark})`;c.fillRect(0,0,cv.width,cv.height)}catch(e){}};
+ im.src=d.src||ph(seed++)}
+
 /* render content */
 $$("[data-t]").forEach(e=>e.textContent=get(SITE,e.dataset.t)||"");
 $$("[data-link]").forEach(a=>{const l=SITE.links[a.dataset.link];a.textContent=l.label;a.href=l.href;a.dataset.cur="Visit"});
-$$("[data-img]").forEach(e=>e.appendChild(img(SITE.images[e.dataset.img])));
+$$("[data-img]").forEach(e=>{const d=SITE.images[e.dataset.img];e.classList.contains("back")?backdrop(e,d):e.appendChild(img(d))});
 $$("[data-cap]").forEach(e=>e.textContent=(SITE.images[e.dataset.cap]||{}).caption||"");
 $$("[data-seal]").forEach(e=>e.src=SITE.seals[e.dataset.seal]);
 $("#finalText").innerHTML=`<span class="split">${SITE.final[0]}</span><span class="l2 split">${SITE.final[1]}</span>`;
@@ -30,7 +45,7 @@ SITE.contact.forEach(c=>{const a=document.createElement("a");a.textContent=c.lab
 /* film strip + blurred backdrops */
 const N=SITE.frames.length,track=$("#track");
 SITE.frames.forEach((f,k)=>{
- const b=document.createElement("div");b.className="back fb";b.appendChild(img(f));$("#shots").appendChild(b);
+ const b=document.createElement("div");b.className="back fb";backdrop(b,f);$("#shots").appendChild(b);
  const cel=document.createElement("figure");cel.className="cel";
  const pic=document.createElement("div");pic.className="pic";pic.appendChild(img(f));
  const fc=document.createElement("figcaption");const nb=document.createElement("b");nb.textContent=z(k+1);
@@ -77,65 +92,90 @@ function tick(t){if(!t0)t0=t;const el=t-t0,timeP=ease(cl(el/MIN)),realP=(loaded+
  shown<1?requestAnimationFrame(tick):finish()}
 requestAnimationFrame(tick);
 
-/* cursor */
+/* performance tier: "lite" is enabled automatically on weak or slow devices (?lite=1 / ?lite=0 forces it) */
+const qLite=new URLSearchParams(location.search).get("lite");
+let lite=false;
+const setLite=v=>{if(lite!==v){lite=v;document.body.classList.toggle("lite",v)}};
+const weak=(navigator.hardwareConcurrency||8)<=4||(navigator.deviceMemory||8)<=4||matchMedia("(prefers-reduced-data:reduce)").matches;
+if(qLite==="1"||(qLite===null&&weak))setLite(true);
+let fpsT=0,fpsN=0,fpsSlow=0;
+
+/* cursor (mouse only) */
 const cur=$("#cur"),lab=$("#curLabel"),root=document.documentElement;let mx=innerWidth/2,my=innerHeight/2,cx=mx,cy=my,pmx=0,pmy=0;
-addEventListener("pointermove",e=>{mx=e.clientX;my=e.clientY});
-document.addEventListener("pointerover",e=>{const t=e.target.closest("[data-cur]");cur.classList.toggle("big",!!t);lab.textContent=t?t.dataset.cur:""});
+if(fine){addEventListener("pointermove",e=>{mx=e.clientX;my=e.clientY},{passive:true});
+ document.addEventListener("pointerover",e=>{const t=e.target.closest("[data-cur]");cur.classList.toggle("big",!!t);lab.textContent=t?t.dataset.cur:""})}
 
 /* the projector: one fixed screen, scroll is the timeline */
 const scenes=$$(".scene"),sps=$$(".sp"),n=scenes.length;
-const S=scenes.map(el=>({el,back:$(":scope>.back",el),still:$(":scope>.still .pic img",el),out:el.dataset.zoom==="out"}));
+const S=scenes.map(el=>({el,back:$(":scope>.back",el),still:$(":scope>.still .pic img",el),out:el.dataset.zoom==="out",show:null}));
 const burn=$("#burn");
 const bar=$("#bar"),hc=$("#hChap"),ht=$("#hTc"),he=$("#hExp"),hp=$("#hPct"),fl=$("#flash"),cw=$("#credits"),fCap=$("#fCap"),fNum=$("#fNum");
 const backs=$$("#shots .fb"),cels=$$(".cel",track),tbs=$$("#thumbs button"),isos=[400,800,1600,3200],fs=["1.8","2.8","1.4","2.0"];
-let vh=innerHeight,dh=0,cwH=0,sy=0,best0=-1,fa=-1,step=0;
+let vh=innerHeight,vw=innerWidth,dh=0,cwH=0,sy=0,best0=-1,fa=-1,step=0,lastSy=-1,tcS="",pcS="";
 const len=i=>R[i].b-R[i].a-(i===n-1?vh:0);
+/* write a style only when it changed (avoids needless style recalculation every frame) */
+const put=(el,k,v)=>{const s=el._s||(el._s={});if(s[k]!==v){s[k]=v;el.style[k]=v}};
 const reelL=$("#reelL"),reelR=$("#reelR");let reelH=0;
 const rcel=(f,k)=>{const c=document.createElement("figure");c.className="rc";c.dataset.n=z(k%100);c.appendChild(img(f));return c};
-function fillReels(){const need=vh*2.4;
- [[reelL,0],[reelR,3]].forEach(([el,off])=>{while(el.offsetHeight<need&&el.children.length<80){const i=el.children.length;el.appendChild(rcel(SITE.frames[(i+off)%N],i+1+(off?7:0)))}});
+function fillReels(){const need=vh*2.4,cap=innerWidth<521?36:80;
+ [[reelL,0],[reelR,3]].forEach(([el,off])=>{while(el.offsetHeight<need&&el.children.length<cap){const i=el.children.length;el.appendChild(rcel(SITE.frames[(i+off)%N],i+1+(off?7:0)))}});
  reelH=reelL.offsetHeight}
-function size(){vh=innerHeight;R=sps.map(s=>({a:s.offsetTop,b:s.offsetTop+s.offsetHeight}));dh=document.documentElement.scrollHeight;cwH=cw.offsetHeight;
+function size(){vh=innerHeight;vw=innerWidth;R=sps.map(s=>({a:s.offsetTop,b:s.offsetTop+s.offsetHeight}));dh=document.documentElement.scrollHeight;
  if(cels[0]){const g=parseFloat(getComputedStyle(track).columnGap)||0;step=cels[0].offsetWidth+g}
- fillReels();cwH=cw.offsetHeight}
-addEventListener("resize",size);addEventListener("load",size);if(document.fonts)document.fonts.ready.then(size);size();
+ fillReels();cwH=cw.offsetHeight;lastSy=-1}
+/* ignore the mobile address bar showing/hiding (it fires resize on every scroll) — only re-measure on a real change */
+let rz=0;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>{if(innerWidth!==vw||Math.abs(innerHeight-vh)>140)size()},150)});
+addEventListener("load",size);if(document.fonts)document.fonts.ready.then(size);size();
 
 /* montage: film strip slides frame to frame, backdrop crossfades */
 function montage(p){const t=cl((p-.05)/.9)*N,pos=cl(t-.5,0,N-1);
- backs.forEach((b,k)=>{let o=cl((.7-Math.abs(t-(k+.5)))/.3);if(k===0&&t<.5)o=1;if(k===N-1&&t>N-.5)o=1;b.style.opacity=o;
-  if(!reduce)b.firstChild.style.transform=`scale(${1.05+cl((t-k+.3)/1.6)*.14})`});
- track.style.transform=`translate3d(${-pos*step}px,-50%,0)`;
- cels.forEach((c,k)=>{const d=Math.abs(pos-k);c.style.transform=`scale(${1-.14*Math.min(d,1.4)})`;c.style.opacity=cl(1-.62*d,.22,1)});
+ backs.forEach((b,k)=>{let o=cl((.7-Math.abs(t-(k+.5)))/.3);if(k===0&&t<.5)o=1;if(k===N-1&&t>N-.5)o=1;
+  const os=o.toFixed(3);if(os==="0.000"&&b._s&&b._s.opacity==="0.000")return;
+  put(b,"opacity",os);if(!reduce&&!lite&&o>0)b.firstChild.style.transform=`scale(${(1.05+cl((t-k+.3)/1.6)*.14).toFixed(3)})`});
+ track.style.transform=`translate3d(${(-pos*step).toFixed(1)}px,-50%,0)`;
+ cels.forEach((c,k)=>{const d=Math.abs(pos-k);put(c,"transform",`scale(${(1-.14*Math.min(d,1.4)).toFixed(3)})`);put(c,"opacity",cl(1-.62*d,.22,1).toFixed(3))});
  const a=Math.min(N-1,Math.round(pos));
  if(a!==fa){fa=a;fCap.textContent=SITE.frames[a].caption||"";fNum.textContent=`${z(a+1)} / ${z(N)}`;tbs.forEach((b,k)=>b.classList.toggle("on",k===a))}}
 function credits(p){const q=cl((p-.03)/.94),from=vh*.62,to=-(cwH-vh*.72),ex=Math.max(0,reelH-vh);
- cw.style.transform=`translate3d(-50%,${from+(to-from)*q}px,0)`;
- reelL.style.transform=`translate3d(0,${-ex*q}px,0)`;reelR.style.transform=`translate3d(0,${-ex*(1-q)}px,0)`}
+ cw.style.transform=`translate3d(-50%,${(from+(to-from)*q).toFixed(1)}px,0)`;
+ reelL.style.transform=`translate3d(0,${(-ex*q).toFixed(1)}px,0)`;reelR.style.transform=`translate3d(0,${(-ex*(1-q)).toFixed(1)}px,0)`}
 
-function frame(){
+function frame(t){
+ /* auto-detect a struggling device: if >40% of frames take longer than ~28ms, drop to lite mode for good */
+ if(qLite===null&&!lite&&document.body.classList.contains("rolling")){const dt=t-fpsT;fpsT=t;
+  if(dt>0&&dt<500){fpsN++;if(dt>28)fpsSlow++;if(fpsN>=90){if(fpsSlow/fpsN>.4)setLite(true);fpsN=0;fpsSlow=0}}}
  sy+=(scrollY-sy)*(reduce?1:.085);if(Math.abs(scrollY-sy)<.3)sy=scrollY;
- cx+=(mx-cx)*.2;cy+=(my-cy)*.2;cur.style.transform=`translate(${cx}px,${cy}px)`;
- if(fine&&!reduce){const nx=+((cx/innerWidth-.5)*2).toFixed(3),ny=+((cy/innerHeight-.5)*2).toFixed(3);
-  if(nx!==pmx||ny!==pmy){pmx=nx;pmy=ny;root.style.setProperty("--mx",nx);root.style.setProperty("--my",ny)}}
- const g=dh>vh?cl(sy/(dh-vh)):0;bar.style.width=g*100+"%";
- const s=Math.floor(g*5400);ht.textContent=`${z(Math.floor(s/3600))}:${z(Math.floor(s/60)%60)}:${z(s%60)}:${z(Math.floor(sy/9)%24)}`;
- hp.textContent=String(Math.round(g*100)).padStart(3,"0");
+ if(fine){cx+=(mx-cx)*.2;cy+=(my-cy)*.2;cur.style.transform=`translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px)`;
+  if(!reduce&&!lite){const nx=+((cx/vw-.5)*2).toFixed(2),ny=+((cy/vh-.5)*2).toFixed(2);
+   if(nx!==pmx||ny!==pmy){pmx=nx;pmy=ny;root.style.setProperty("--mx",nx);root.style.setProperty("--my",ny)}}}
+ /* nothing scrolled since last frame -> skip all the scene maths */
+ if(sy!==lastSy){lastSy=sy;
+ const g=dh>vh?cl(sy/(dh-vh)):0;bar.style.transform=`scaleX(${g.toFixed(4)})`;
+ const s=Math.floor(g*5400),tc=`${z(Math.floor(s/3600))}:${z(Math.floor(s/60)%60)}:${z(s%60)}:${z(Math.floor(sy/9)%24)}`;
+ if(tc!==tcS){tcS=tc;ht.textContent=tc}
+ const pc=String(Math.round(g*100)).padStart(3,"0");if(pc!==pcS){pcS=pc;hp.textContent=pc}
  let best=0,bo=-1,f=0,bt=9;
  S.forEach((o,i)=>{const p=(sy-R[i].a)/len(i);let a=1;
   if(i>0)a*=cl((p+.05)/.15);if(i<n-1)a*=cl((1.05-p)/.15);
-  const e=o.el;e.style.opacity=a;e.style.visibility=a>.004?"visible":"hidden";e.style.pointerEvents=a>.6?"auto":"none";
-  e.classList.toggle("show",(i===0||p>.1)&&(i===n-1||p<.9));
-  if(!reduce){if(a<.999){e.style.filter=`blur(${((1-a)*15).toFixed(1)}px)`;e.style.transform=`scale(${(1+(1-a)*.035).toFixed(4)})`}else if(e.style.filter){e.style.filter="";e.style.transform=""}}
-  if(i<n-1){const t=(sy-R[i].b)/(vh*.32);if(Math.abs(t)<Math.abs(bt))bt=t}
+  const e=o.el,vis=a>.004,fade=a<.999;
+  put(e,"opacity",a.toFixed(3));put(e,"visibility",vis?"visible":"hidden");put(e,"pointerEvents",a>.6?"auto":"none");
+  const sh=(i===0||p>.1)&&(i===n-1||p<.9);if(o.show!==sh){o.show=sh;e.classList.toggle("show",sh)}
+  /* rack-focus blur + slight zoom only while a scene is actually fading, and never in lite mode */
+  if(!reduce&&!lite&&fade&&vis){put(e,"willChange","opacity, transform, filter");put(e,"filter",`blur(${((1-a)*12).toFixed(1)}px)`);put(e,"transform",`scale(${(1+(1-a)*.035).toFixed(3)})`)}
+  else{put(e,"willChange","auto");put(e,"filter","");put(e,"transform","")}
+  if(i<n-1){const tt=(sy-R[i].b)/(vh*.32);if(Math.abs(tt)<Math.abs(bt))bt=tt}
   if(a>bo){bo=a;best=i}
-  if(a>.004){const q=cl(p);
-   if(!reduce){if(o.back)o.back.style.transform=`scale(${1+q*.1})`;if(o.still)o.still.style.transform=`scale(${o.out?(1.26-q*.25).toFixed(4):(1.02+q*.12).toFixed(4)})`}
+  if(vis){const q=cl(p);
+   if(!reduce&&!lite){if(o.back)o.back.style.transform=`scale(${(1+q*.08).toFixed(4)})`}
+   if(!reduce&&o.still)o.still.style.transform=`scale(${o.out?(1.26-q*.25).toFixed(4):(1.02+q*.12).toFixed(4)})`;
    if(i===5)montage(p);if(i===6)credits(p)}
   if(i<n-1)f=Math.max(f,1-Math.abs(sy-R[i].b)/(vh*.28))});
- fl.style.opacity=reduce?0:cl(f)*.1;
+ /* full-screen blend layers exist only during a scene change */
+ const fo=reduce||lite?0:cl(f)*.1;if(fo>.004){put(fl,"display","block");put(fl,"opacity",fo.toFixed(3))}else put(fl,"display","none");
  const bw=!reduce&&Math.abs(bt)<1?Math.pow(1-Math.abs(bt),1.4):0;
- if(bw>0){burn.style.opacity=(bw*(innerWidth<821?.5:.8)).toFixed(3);burn.style.transform=`translate3d(${(-2.5-95*bt).toFixed(2)}vw,0,0)`}else if(burn.style.opacity!=="0")burn.style.opacity="0";
+ if(bw>.01){put(burn,"display","block");put(burn,"opacity",(bw*(vw<821?.5:.8)).toFixed(3));burn.style.transform=`translate3d(${(-2.5-95*bt).toFixed(2)}vw,0,0)`}else put(burn,"display","none");
  if(best!==best0){best0=best;hc.textContent=scenes[best].dataset.chap;he.textContent=`ISO ${isos[best%4]} · f/${fs[best%4]} · 1/${best%2?48:50}`}
+ }
  requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 })();
