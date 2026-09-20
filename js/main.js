@@ -84,7 +84,8 @@ document.addEventListener("pointerover",e=>{const t=e.target.closest("[data-cur]
 
 /* the projector: one fixed screen, scroll is the timeline */
 const scenes=$$(".scene"),sps=$$(".sp"),n=scenes.length;
-const S=scenes.map(el=>({el,back:$(":scope>.back",el),still:$(":scope>.still .pic img",el)}));
+const S=scenes.map(el=>({el,back:$(":scope>.back",el),still:$(":scope>.still .pic img",el),out:el.dataset.zoom==="out"}));
+const burn=$("#burn");
 const bar=$("#bar"),hc=$("#hChap"),ht=$("#hTc"),he=$("#hExp"),hp=$("#hPct"),fl=$("#flash"),cw=$("#credits"),fCap=$("#fCap"),fNum=$("#fNum");
 const backs=$$("#shots .fb"),cels=$$(".cel",track),tbs=$$("#thumbs button"),isos=[400,800,1600,3200],fs=["1.8","2.8","1.4","2.0"];
 let vh=innerHeight,dh=0,cwH=0,sy=0,best0=-1,fa=-1,step=0;
@@ -119,17 +120,21 @@ function frame(){
  const g=dh>vh?cl(sy/(dh-vh)):0;bar.style.width=g*100+"%";
  const s=Math.floor(g*5400);ht.textContent=`${z(Math.floor(s/3600))}:${z(Math.floor(s/60)%60)}:${z(s%60)}:${z(Math.floor(sy/9)%24)}`;
  hp.textContent=String(Math.round(g*100)).padStart(3,"0");
- let best=0,bo=-1,f=0;
+ let best=0,bo=-1,f=0,bt=9;
  S.forEach((o,i)=>{const p=(sy-R[i].a)/len(i);let a=1;
   if(i>0)a*=cl((p+.05)/.15);if(i<n-1)a*=cl((1.05-p)/.15);
   const e=o.el;e.style.opacity=a;e.style.visibility=a>.004?"visible":"hidden";e.style.pointerEvents=a>.6?"auto":"none";
   e.classList.toggle("show",(i===0||p>.1)&&(i===n-1||p<.9));
+  if(!reduce){if(a<.999){e.style.filter=`blur(${((1-a)*15).toFixed(1)}px)`;e.style.transform=`scale(${(1+(1-a)*.035).toFixed(4)})`}else if(e.style.filter){e.style.filter="";e.style.transform=""}}
+  if(i<n-1){const t=(sy-R[i].b)/(vh*.32);if(Math.abs(t)<Math.abs(bt))bt=t}
   if(a>bo){bo=a;best=i}
   if(a>.004){const q=cl(p);
-   if(!reduce){if(o.back)o.back.style.transform=`scale(${1+q*.1})`;if(o.still)o.still.style.transform=`scale(${1.02+q*.12})`}
+   if(!reduce){if(o.back)o.back.style.transform=`scale(${1+q*.1})`;if(o.still)o.still.style.transform=`scale(${o.out?(1.26-q*.25).toFixed(4):(1.02+q*.12).toFixed(4)})`}
    if(i===5)montage(p);if(i===6)credits(p)}
   if(i<n-1)f=Math.max(f,1-Math.abs(sy-R[i].b)/(vh*.28))});
- fl.style.opacity=reduce?0:cl(f)*.13;
+ fl.style.opacity=reduce?0:cl(f)*.1;
+ const bw=!reduce&&Math.abs(bt)<1?Math.pow(1-Math.abs(bt),1.4):0;
+ if(bw>0){burn.style.opacity=(bw*(innerWidth<821?.5:.8)).toFixed(3);burn.style.transform=`translate3d(${(-2.5-95*bt).toFixed(2)}vw,0,0)`}else if(burn.style.opacity!=="0")burn.style.opacity="0";
  if(best!==best0){best0=best;hc.textContent=scenes[best].dataset.chap;he.textContent=`ISO ${isos[best%4]} · f/${fs[best%4]} · 1/${best%2?48:50}`}
  requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
