@@ -4,7 +4,7 @@
    Landscape or portrait both work; portrait ~4:5 at 1600px+ is ideal.
    ============================================================ */
 const SITE = {
-  name: "Shmita Shah",
+  name: "Shmitaa Shah",
   title: "Cinematographer & Visual Storyteller",
   opening: "Every frame holds a memory.",
   eye: { chapter: "Chapter 01 — The Eye", title: "She sees it before it happens.",
@@ -34,7 +34,7 @@ const SITE = {
   ],
   /* Optional: drop the real Chareveti logo into /assets and uncomment — it replaces the typeset चरैवेति FILMS lockup */
   logos: { /* chareveti: "assets/chareveti-logo.png" */ },
-  footer: "© Shmita Shah",
+  footer: "© Shmitaa Shah",
   seals: { moj: "assets/moj-logo.jpg", tss: "assets/tss-logo.jpg" },
   images: {
     hero:      { src: "assets/photo-girl-bw.jpg",     alt: "Black and white portrait of Shmita, eyes closed",   caption: "Stillness",  pos: "50% 40%" },
