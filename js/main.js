@@ -29,7 +29,6 @@ function backdrop(el,d){
 
 /* render content */
 $$("[data-t]").forEach(e=>e.textContent=get(SITE,e.dataset.t)||"");
-$$("[data-link]").forEach(a=>{const l=SITE.links[a.dataset.link];a.textContent=l.label;a.href=l.href;a.dataset.cur="Visit"});
 $$("[data-img]").forEach(e=>{const d=SITE.images[e.dataset.img];e.classList.contains("back")?backdrop(e,d):e.appendChild(img(d))});
 $$("[data-cap]").forEach(e=>e.textContent=(SITE.images[e.dataset.cap]||{}).caption||"");
 $$("[data-seal]").forEach(e=>e.src=SITE.seals[e.dataset.seal]);
@@ -42,6 +41,9 @@ list("#work",SITE.work);list("#places",SITE.places);
 SITE.contact.forEach(c=>{const a=document.createElement("a");a.textContent=c.label;a.href=c.href;a.dataset.cur="Go";
  if(c.href.startsWith("http")){a.target="_blank";a.rel="noopener"}$("#contactLinks").appendChild(a)});
 
+/* optional real Chareveti logo (SITE.logos.chareveti); the typeset चरैवेति FILMS lockup is the fallback */
+if(SITE.logos&&SITE.logos.chareveti){const li=new Image();li.onload=()=>{const h=$("#chLogo");h.textContent="";li.className="logo-img";li.alt="Chareveti Films logo";h.appendChild(li)};li.src=SITE.logos.chareveti}
+
 /* film strip + blurred backdrops */
 const N=SITE.frames.length,track=$("#track");
 SITE.frames.forEach((f,k)=>{
@@ -51,7 +53,7 @@ SITE.frames.forEach((f,k)=>{
  const fc=document.createElement("figcaption");const nb=document.createElement("b");nb.textContent=z(k+1);
  const cs=document.createElement("span");cs.textContent=f.caption||"";fc.append(nb,cs);cel.append(pic,fc);track.appendChild(cel);
  const t=document.createElement("button");t.dataset.cur="Play";t.setAttribute("aria-label",f.caption||"Frame "+(k+1));t.appendChild(img(f));$("#thumbs").appendChild(t);
- t.onclick=()=>scrollTo({top:R[5].a+(.05+.9*(k+.5)/N)*len(5),behavior:"smooth"})});
+ t.onclick=()=>scrollTo({top:R[FR].a+(.05+.9*(k+.5)/N)*len(FR),behavior:"smooth"})});
 
 /* masked word reveal + staggered delays */
 $$(".split").forEach(el=>{const words=el.textContent.trim().split(/\s+/);el.textContent="";
@@ -78,7 +80,7 @@ async function start(){document.body.classList.remove("loading");document.body.c
 const ld=$("#leader"),ldFill=$("#ldFill"),count=$("#count"),ldFr=$("#ldFrames"),ldName=$("#ldName");
 {const nm=ldName.textContent;ldName.setAttribute("aria-label",nm);ldName.textContent="";
  [...nm].forEach((ch,i)=>{const s=document.createElement("span");s.className="l";s.textContent=ch===" "?"\u00a0":ch;s.style.animationDelay=(.15+i*.07)+"s";ldName.appendChild(s)})}
-const urls=[...new Set([...Object.values(SITE.images).map(i=>i.src),...SITE.frames.map(f=>f.src),...Object.values(SITE.seals)].filter(Boolean))];
+const urls=[...new Set([...Object.values(SITE.images).map(i=>i.src),...SITE.frames.map(f=>f.src),...Object.values(SITE.seals),...Object.values(SITE.logos||{})].filter(Boolean))];
 let loaded=0,fontsOk=false;
 urls.forEach(u=>{const i=new Image();i.onload=i.onerror=()=>loaded++;i.src=u});
 (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(()=>fontsOk=true);
@@ -107,6 +109,7 @@ if(fine){addEventListener("pointermove",e=>{mx=e.clientX;my=e.clientY},{passive:
 
 /* the projector: one fixed screen, scroll is the timeline */
 const scenes=$$(".scene"),sps=$$(".sp"),n=scenes.length;
+const FR=scenes.findIndex(e=>e.id==="s-frames"),CR=scenes.findIndex(e=>e.id==="s-credits");
 const S=scenes.map(el=>({el,back:$(":scope>.back",el),still:$(":scope>.still .pic img",el),out:el.dataset.zoom==="out",show:null}));
 const burn=$("#burn");
 const bar=$("#bar"),hc=$("#hChap"),ht=$("#hTc"),he=$("#hExp"),hp=$("#hPct"),fl=$("#flash"),cw=$("#credits"),fCap=$("#fCap"),fNum=$("#fNum");
@@ -168,7 +171,7 @@ function frame(t){
   if(vis){const q=cl(p);
    if(!reduce&&!lite){if(o.back)o.back.style.transform=`scale(${(1+q*.08).toFixed(4)})`}
    if(!reduce&&o.still)o.still.style.transform=`scale(${o.out?(1.26-q*.25).toFixed(4):(1.02+q*.12).toFixed(4)})`;
-   if(i===5)montage(p);if(i===6)credits(p)}
+   if(i===FR)montage(p);if(i===CR)credits(p)}
   if(i<n-1)f=Math.max(f,1-Math.abs(sy-R[i].b)/(vh*.28))});
  /* full-screen blend layers exist only during a scene change */
  const fo=reduce||lite?0:cl(f)*.1;if(fo>.004){put(fl,"display","block");put(fl,"opacity",fo.toFixed(3))}else put(fl,"display","none");
